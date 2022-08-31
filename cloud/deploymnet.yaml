@@ -53,5 +53,140 @@ spec:
   selector:
     matchLabels:
       app: cloudl-client
----
 
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudl-server-deployment
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: cloudl-server
+    spec:
+      volumes:
+      - name: opa-config-vol
+        configMap:
+          name: opa-istio-config
+      containers:
+      - name: opa
+        image: openpolicyagent/opa:0.42.2-envoy-rootless
+        volumeMounts:
+        - readOnly: true
+          mountPath: /config
+          name: opa-config-vol
+        livenessProbe:
+            httpGet:
+              path: /health
+              scheme: HTTP
+              port: 8282
+            initialDelaySeconds: 5    # Tune these periods for your environemnt
+            periodSeconds: 5
+        readinessProbe:
+             httpGet:
+               path: /health?bundle=true # Include bundle activation in readiness
+               scheme: HTTP
+               port: 8282
+             initialDelaySeconds: 5
+             periodSeconds: 5
+        args:
+          - "run"
+          - "--server"
+          - "--ignore=.*"
+          - "--config-file=/config/conf.yaml"
+          - "--authorization=basic"
+          - "--addr=http://127.0.0.1:8181"
+          - "--diagnostic-addr=0.0.0.0:8282"    
+      - name: cloudl-server
+        image: kavinduchamiran/cloudl-server:latest
+          ports:
+            - containerPort: 5000
+              name: nodejs-port  
+  selector:
+    matchLabels:
+      app: cloudl-server
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mongodb
+  labels:
+    app: mongodb
+spec:
+  containers:
+  - name: opa
+        image: openpolicyagent/opa:0.42.2-envoy-rootless
+        volumeMounts:
+        - readOnly: true
+          mountPath: /config
+          name: opa-config-vol
+        livenessProbe:
+            httpGet:
+              path: /health
+              scheme: HTTP
+              port: 8282
+            initialDelaySeconds: 5    # Tune these periods for your environemnt
+            periodSeconds: 5
+        readinessProbe:
+             httpGet:
+               path: /health?bundle=true # Include bundle activation in readiness
+               scheme: HTTP
+               port: 8282
+             initialDelaySeconds: 5
+             periodSeconds: 5
+        args:
+          - "run"
+          - "--server"
+          - "--ignore=.*"
+          - "--config-file=/config/conf.yaml"
+          - "--authorization=basic"
+          - "--addr=http://127.0.0.1:8181"
+          - "--diagnostic-addr=0.0.0.0:8282"
+  - name: mongodb
+    image: mongo:4.0.4
+      ports:
+        - containerPort: 27017
+          name: mongodb-port
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudl-client-service
+spec:
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: http-port
+  selector:
+    app: cloudl-client
+  type: LoadBalancer
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudl-server-service
+spec:
+  ports:
+    - port: 5000
+      protocol: TCP
+  selector:
+    app: cloudl-server
+  type: NodePort
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-service
+spec:
+  ports:
+    - port: 27017
+      protocol: TCP
+  selector:
+    app: mongodb
+  type: NodePort      
